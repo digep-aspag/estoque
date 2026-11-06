@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Controle de Estoque — IBRAM-DF</title>
+  <link rel="icon" href="assets/logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/estilo.css">
+</head>
+<body>
+
+<!-- ======================= CARREGANDO ======================= -->
+<div id="tela-carregando" class="tela-centro">
+  <div class="spinner" aria-hidden="true"></div>
+  <p class="mono">conectando ao banco de dados…</p>
+</div>
+
+<!-- ======================= LOGIN ======================= -->
+<div id="tela-login" class="tela-login" hidden>
+  <div class="login-card">
+    <div class="logo-card"><img src="assets/logo.png" alt="Brasília Ambiental — IBRAM"></div>
+    <p class="rotulo-inst" data-inst="unidade"></p>
+    <h1 class="serif" data-inst="sistema"></h1>
+    <p class="muted">Acesso restrito a usuários autorizados pela administração do sistema.</p>
+
+    <button id="btn-google" class="btn btn-google" type="button">
+      <svg viewBox="0 0 48 48" width="18" height="18" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>
+      Entrar com Google
+    </button>
+
+    <div id="bloco-email">
+      <div class="divisor"><span>ou</span></div>
+      <form id="form-login" autocomplete="on" novalidate>
+        <label>E-mail<input type="email" id="login-email" autocomplete="username" required></label>
+        <label>Senha<input type="password" id="login-senha" autocomplete="current-password" minlength="6" required></label>
+        <button class="btn btn-prim" type="submit">Entrar</button>
+      </form>
+      <div class="links-login">
+        <button type="button" class="link" id="btn-primeiro-acesso">Primeiro acesso (criar senha)</button>
+        <button type="button" class="link" id="btn-esqueci">Esqueci a senha</button>
+      </div>
+    </div>
+    <p id="login-msg" class="msg" role="alert"></p>
+  </div>
+</div>
+
+<!-- ======================= ACESSO NEGADO / VERIFICAÇÃO ======================= -->
+<div id="tela-bloqueio" class="tela-login" hidden>
+  <div class="login-card">
+    <div class="logo-card"><img src="assets/logo.png" alt="Brasília Ambiental — IBRAM"></div>
+    <h1 class="serif" id="bloq-titulo">Acesso não autorizado</h1>
+    <p id="bloq-texto" class="muted"></p>
+    <button id="btn-reenviar" class="btn" type="button" hidden>Reenviar e-mail de verificação</button>
+    <button id="btn-recarregar" class="btn" type="button" hidden>Já verifiquei — continuar</button>
+    <button id="btn-sair-bloq" class="btn btn-prim" type="button">Sair</button>
+  </div>
+</div>
+
+<!-- ======================= APLICAÇÃO ======================= -->
+<div id="app" class="app" hidden>
+  <aside class="lateral" id="lateral">
+    <div class="logo-card"><img src="assets/logo.png" alt="Brasília Ambiental — IBRAM"></div>
+    <p class="rotulo-inst" data-inst="unidade"></p>
+    <h2 class="serif titulo-sis" data-inst="sistema"></h2>
+    <div class="linha-ouro"></div>
+    <nav class="menu">
+      <button data-vista="painel" class="ativo"><span class="ic" style="--c:#D9A441">▦</span>Painel</button>
+      <button data-vista="produtos"><span class="ic" style="--c:#2F6DA3">▤</span>Produtos</button>
+      <button data-vista="movimentos"><span class="ic" style="--c:#4E6B3A">⇄</span>Movimentações</button>
+      <button data-vista="inventario"><span class="ic" style="--c:#C2571A">✓</span>Inventário</button>
+      <button data-vista="usuarios" data-papel="admin"><span class="ic" style="--c:#6B3FA0">§</span>Usuários</button>
+    </nav>
+    <div class="lateral-rodape mono" id="versao">v1.0 · CMP — Lei 4.320/64, art. 106, III</div>
+  </aside>
+
+  <main class="principal">
+    <header class="topo">
+      <button class="btn-menu" id="btn-menu" aria-label="Abrir menu">☰</button>
+      <span class="status mono"><i class="ponto" id="ponto-con"></i><span id="txt-con">conectado ao banco de dados</span></span>
+      <div class="topo-dir">
+        <span class="papel-tag" id="papel-tag"></span>
+        <span class="mono muted" id="usuario-email"></span>
+        <button class="link" id="btn-sair">Sair</button>
+      </div>
+    </header>
+
+    <!-- PAINEL -->
+    <section class="vista" id="v-painel">
+      <div class="cab-vista">
+        <div>
+          <h1 class="serif">Painel do estoque</h1>
+          <p class="muted">Posição consolidada em tempo real. Valoração pelo custo médio ponderado móvel.</p>
+        </div>
+        <div class="acoes" data-escrita>
+          <button class="btn btn-saida" data-acao="saida">− Registrar retirada</button>
+          <button class="btn btn-prim" data-acao="entrada">+ Registrar entrada</button>
+        </div>
+      </div>
+      <div class="kpis" id="kpis"></div>
+      <div class="grade-2">
+        <div class="cartao">
+          <div class="cartao-cab"><h3 class="serif">Reposição necessária</h3><span class="muted pequeno">saldo ≤ estoque mínimo</span></div>
+          <div id="lista-reposicao" class="lista"></div>
+        </div>
+        <div class="cartao">
+          <div class="cartao-cab"><h3 class="serif">Curva ABC</h3><span class="muted pequeno">concentração do valor imobilizado</span></div>
+          <div id="abc-resumo"></div>
+        </div>
+      </div>
+      <div class="cartao">
+        <div class="cartao-cab"><h3 class="serif">Últimas movimentações</h3><button class="link" data-ir="movimentos">ver todas →</button></div>
+        <div class="tabela-wrap"><table class="tabela" id="tab-recentes"></table></div>
+      </div>
+    </section>
+
+    <!-- PRODUTOS -->
+    <section class="vista" id="v-produtos" hidden>
+      <div class="cab-vista">
+        <div>
+          <h1 class="serif">Produtos em estoque</h1>
+          <p class="muted">Quantidade, custo médio unitário e valor total de cada item. Toda retirada recalcula o estoque automaticamente.</p>
+        </div>
+        <div class="acoes">
+          <button class="btn" id="btn-exp-prod">Exportar CSV</button>
+          <button class="btn" id="btn-imprimir-prod">Imprimir</button>
+          <label class="btn" data-escrita>Importar CSV<input type="file" id="inp-import" accept=".csv,text/csv" hidden></label>
+          <button class="btn btn-prim" id="btn-novo-prod" data-escrita>+ Novo produto</button>
+        </div>
+      </div>
+      <div class="filtros">
+        <input type="search" id="f-busca" placeholder="Buscar por código ou descrição…  (atalho: /)">
+        <select id="f-categoria"><option value="">Todas as categorias</option></select>
+        <select id="f-situacao">
+          <option value="">Todas as situações</option>
+          <option value="repor">Abaixo do mínimo</option>
+          <option value="zerado">Zerados</option>
+          <option value="ok">Normais</option>
+          <option value="inativo">Inativos</option>
+        </select>
+        <select id="f-abc"><option value="">Curva: todas</option><option>A</option><option>B</option><option>C</option></select>
+      </div>
+      <div class="cartao sem-pad">
+        <div class="tabela-wrap"><table class="tabela" id="tab-produtos"></table></div>
+      </div>
+    </section>
+
+    <!-- MOVIMENTAÇÕES -->
+    <section class="vista" id="v-movimentos" hidden>
+      <div class="cab-vista">
+        <div>
+          <h1 class="serif">Movimentações</h1>
+          <p class="muted">Registro imutável de entradas, retiradas e ajustes (trilha de auditoria).</p>
+        </div>
+        <div class="acoes">
+          <button class="btn" id="btn-exp-mov">Exportar CSV</button>
+          <button class="btn" id="btn-imprimir-mov">Imprimir</button>
+        </div>
+      </div>
+      <div class="filtros">
+        <label class="campo-inline">De <input type="date" id="m-ini"></label>
+        <label class="campo-inline">Até <input type="date" id="m-fim"></label>
+        <select id="m-tipo">
+          <option value="">Todos os tipos</option>
+          <option value="ENTRADA">Entradas</option>
+          <option value="SAIDA">Retiradas</option>
+          <option value="AJUSTE">Ajustes de inventário</option>
+          <option value="SALDO_INICIAL">Saldos iniciais</option>
+        </select>
+        <input type="search" id="m-busca" placeholder="Produto, setor, documento ou usuário…">
+        <button class="btn" id="btn-m-filtrar">Consultar</button>
+      </div>
+      <div class="resumo-mov" id="resumo-mov"></div>
+      <div class="cartao sem-pad">
+        <div class="tabela-wrap"><table class="tabela" id="tab-movimentos"></table></div>
+      </div>
+    </section>
+
+    <!-- INVENTÁRIO -->
+    <section class="vista" id="v-inventario" hidden>
+      <div class="cab-vista">
+        <div>
+          <h1 class="serif">Inventário físico</h1>
+          <p class="muted">Informe a quantidade contada. As diferenças geram ajustes valorizados pelo custo médio. O rascunho fica salvo neste navegador.</p>
+        </div>
+        <div class="acoes">
+          <label class="chk"><input type="checkbox" id="inv-cego"> Contagem às cegas</label>
+          <button class="btn" id="btn-inv-folha">Imprimir folha de contagem</button>
+          <button class="btn" id="btn-inv-limpar">Limpar rascunho</button>
+          <button class="btn btn-prim" id="btn-inv-aplicar" data-escrita>Aplicar ajustes</button>
+        </div>
+      </div>
+      <div class="filtros">
+        <input type="search" id="inv-busca" placeholder="Filtrar itens…">
+        <select id="inv-categoria"><option value="">Todas as categorias</option></select>
+        <label class="chk"><input type="checkbox" id="inv-so-dif"> Somente com diferença</label>
+      </div>
+      <div class="resumo-mov" id="inv-resumo"></div>
+      <div class="cartao sem-pad">
+        <div class="tabela-wrap"><table class="tabela" id="tab-inventario"></table></div>
+      </div>
+    </section>
+
+    <!-- USUÁRIOS -->
+    <section class="vista" id="v-usuarios" hidden>
+      <div class="cab-vista">
+        <div>
+          <h1 class="serif">Usuários autorizados</h1>
+          <p class="muted">Somente os e-mails desta lista conseguem entrar. <b>Administrador</b>: tudo, inclusive usuários · <b>Operador</b>: cadastra e movimenta · <b>Consulta</b>: apenas visualiza.</p>
+        </div>
+      </div>
+      <form class="cartao form-linha" id="form-usuario">
+        <label>E-mail<input type="email" id="u-email" required placeholder="nome@ibram.df.gov.br"></label>
+        <label>Nome<input type="text" id="u-nome" required maxlength="120"></label>
+        <label>Perfil
+          <select id="u-papel"><option value="operador">Operador</option><option value="leitor">Consulta</option><option value="admin">Administrador</option></select>
+        </label>
+        <button class="btn btn-prim" type="submit">Autorizar</button>
+      </form>
+      <div class="cartao sem-pad">
+        <div class="tabela-wrap"><table class="tabela" id="tab-usuarios"></table></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- ======================= DIÁLOGOS ======================= -->
+<dialog id="dlg-produto" class="dlg">
+  <form method="dialog" id="form-produto" novalidate>
+    <h2 class="serif" id="dp-titulo">Novo produto</h2>
+    <div class="grade-form">
+      <label>Código do produto *<input id="p-codigo" required maxlength="60" placeholder="Ex.: MAT-0001"></label>
+      <label>Unidade *<input id="p-unidade" required maxlength="10" list="lista-unidades" placeholder="UN, CX, KG…"></label>
+      <label class="col-2">Descrição *<input id="p-descricao" required maxlength="300"></label>
+      <label>Categoria<input id="p-categoria" maxlength="60" list="lista-categorias" placeholder="Ex.: Material de expediente"></label>
+      <label>Localização<input id="p-local" maxlength="60" placeholder="Ex.: Almoxarifado — prateleira B3"></label>
+      <label>Estoque mínimo<input id="p-minimo" inputmode="decimal" placeholder="0"></label>
+      <span></span>
+      <fieldset class="col-2" id="p-saldo-inicial">
+        <legend>Saldo inicial</legend>
+        <div class="grade-3">
+          <label>Quantidade<input id="p-qtd" inputmode="decimal" placeholder="0"></label>
+          <label>Valor unitário (R$)<input id="p-vu" inputmode="decimal" placeholder="0,00"></label>
+          <label>Valor total<output id="p-vt" class="saida-calc">R$ 0,00</output></label>
+        </div>
+      </fieldset>
+      <label class="col-2 chk" id="p-ativo-wrap" hidden><input type="checkbox" id="p-ativo" checked> Produto ativo</label>
+    </div>
+    <p class="msg" id="dp-msg" role="alert"></p>
+    <div class="dlg-acoes">
+      <button class="btn" type="button" data-fechar>Cancelar</button>
+      <button class="btn btn-prim" id="dp-salvar" value="ok">Salvar</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-lanc" class="dlg dlg-largo">
+  <form method="dialog" id="form-lanc" novalidate>
+    <h2 class="serif" id="dl-titulo">Registrar retirada</h2>
+    <div class="grade-form">
+      <label id="dl-setor-wrap">Setor / requisitante<input id="dl-setor" maxlength="120" list="lista-setores" placeholder="Ex.: SUFAM — João da Silva"></label>
+      <label>Documento<input id="dl-doc" maxlength="80" placeholder="Nº SEI, requisição ou nota fiscal"></label>
+      <label class="col-2">Observação<input id="dl-obs" maxlength="300"></label>
+    </div>
+    <div class="tabela-wrap">
+      <table class="tabela tabela-lanc" id="tab-lanc"></table>
+    </div>
+    <button type="button" class="link" id="dl-add">+ adicionar item</button>
+    <div class="totais-lanc" id="dl-totais"></div>
+    <p class="msg" id="dl-msg" role="alert"></p>
+    <div class="dlg-acoes">
+      <button class="btn" type="button" data-fechar>Cancelar</button>
+      <button class="btn btn-prim" id="dl-confirmar" value="ok">Confirmar</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-kardex" class="dlg dlg-largo">
+  <h2 class="serif" id="dk-titulo">Ficha do produto</h2>
+  <p class="muted" id="dk-sub"></p>
+  <div class="tabela-wrap"><table class="tabela" id="tab-kardex"></table></div>
+  <div class="dlg-acoes">
+    <button class="btn" id="dk-csv">Exportar CSV</button>
+    <button class="btn btn-prim" id="dk-fechar">Fechar</button>
+  </div>
+</dialog>
+
+<dialog id="dlg-confirma" class="dlg">
+  <h2 class="serif" id="dc-titulo">Confirmar</h2>
+  <div id="dc-texto"></div>
+  <div class="dlg-acoes">
+    <button class="btn" id="dc-nao">Cancelar</button>
+    <button class="btn btn-prim" id="dc-sim">Confirmar</button>
+  </div>
+</dialog>
+
+<datalist id="lista-unidades"><option>UN</option><option>CX</option><option>PCT</option><option>RESMA</option><option>KG</option><option>L</option><option>M</option><option>PAR</option><option>FRASCO</option><option>ROLO</option></datalist>
+<datalist id="lista-categorias"></datalist>
+<datalist id="lista-setores"></datalist>
+<datalist id="lista-produtos"></datalist>
+
+<div id="cab-impressao" class="so-impressao">
+  <img src="assets/logo.png" alt="">
+  <div><b data-inst="nomeCompleto"></b><br><span id="imp-titulo"></span><br><small id="imp-data"></small></div>
+</div>
+
+<div id="toasts" aria-live="polite"></div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

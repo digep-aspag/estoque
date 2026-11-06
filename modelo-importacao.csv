@@ -1,0 +1,4 @@
+codigo;descricao;unidade;quantidade;valor_unitario;categoria;estoque_minimo;localizacao
+MAT-0001;Papel A4 75g/m² — resma 500 folhas;RESMA;100;25,50;Material de expediente;120;Almoxarifado — B1
+MAT-0002;Caneta esferográfica azul;UN;200;1,35;Material de expediente;50;Almoxarifado — B2
+INF-0001;Toner HP 26A;UN;6;389,90;Informática;2;Almoxarifado — C1

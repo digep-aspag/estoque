@@ -1,0 +1,94 @@
+rules_version = '2';
+
+// ============================================================================
+// REGRAS DE SEGURANÇA — Controle de Estoque IBRAM-DF
+// Publicar em: Firebase Console → Firestore Database → Regras → Publicar
+// ----------------------------------------------------------------------------
+// • Só entra quem tem documento em /usuarios/{email} com ativo == true.
+// • E-mail precisa estar verificado (impede cadastro com e-mail alheio).
+// • Perfis: admin (tudo) · operador (cadastra/movimenta) · leitor (consulta).
+// • Movimentações são IMUTÁVEIS (sem edição/exclusão) — trilha de auditoria.
+// • Saldo de produto só muda junto com uma movimentação gravada na mesma
+//   transação (vínculo ultimoMovimentoId ↔ movimento).
+// ============================================================================
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function logado() {
+      return request.auth != null
+        && request.auth.token.email != null
+        && request.auth.token.email_verified == true;
+    }
+    function meuEmail() { return request.auth.token.email.lower(); }
+    function caminhoUsuario() { return /databases/$(database)/documents/usuarios/$(meuEmail()); }
+    function autorizado() {
+      return logado() && exists(caminhoUsuario()) && get(caminhoUsuario()).data.ativo == true;
+    }
+    function papel() { return get(caminhoUsuario()).data.papel; }
+    function podeEscrever() { return autorizado() && papel() in ['admin', 'operador']; }
+    function ehAdmin() { return autorizado() && papel() == 'admin'; }
+
+    // ---------------------------------------------------------------- Usuários
+    match /usuarios/{email} {
+      allow read: if (logado() && meuEmail() == email) || ehAdmin();
+      allow create, update: if ehAdmin()
+        && email == email.lower()
+        && email != meuEmail()                       // admin não altera o próprio perfil
+        && request.resource.data.papel in ['admin', 'operador', 'leitor']
+        && request.resource.data.ativo is bool
+        && request.resource.data.nome is string
+        && request.resource.data.nome.size() > 0;
+      allow delete: if ehAdmin() && email != meuEmail();
+    }
+
+    // ---------------------------------------------------------------- Produtos
+    function produtoValido(d) {
+      return d.codigo is string && d.codigo.size() > 0 && d.codigo.size() <= 60
+        && d.descricao is string && d.descricao.size() > 0 && d.descricao.size() <= 300
+        && d.unidade is string && d.unidade.size() > 0 && d.unidade.size() <= 10
+        && d.quantidade is number && d.quantidade >= 0
+        && d.valorTotalCent is int && d.valorTotalCent >= 0
+        && d.estoqueMinimo is number && d.estoqueMinimo >= 0
+        && d.ativo is bool
+        && (d.quantidade > 0 || d.valorTotalCent == 0);   // sem saldo, sem valor
+    }
+    function saldoInalterado() {
+      return request.resource.data.quantidade == resource.data.quantidade
+        && request.resource.data.valorTotalCent == resource.data.valorTotalCent
+        && request.resource.data.ultimoMovimentoId == resource.data.ultimoMovimentoId;
+    }
+    function comMovimentoNovo() {
+      return request.resource.data.ultimoMovimentoId is string
+        && request.resource.data.ultimoMovimentoId != resource.data.ultimoMovimentoId
+        && existsAfter(/databases/$(database)/documents/movimentos/$(request.resource.data.ultimoMovimentoId));
+    }
+
+    match /produtos/{id} {
+      allow read: if autorizado();
+      allow create: if podeEscrever() && produtoValido(request.resource.data)
+        && (
+          (request.resource.data.quantidade == 0 && request.resource.data.ultimoMovimentoId == null)
+          || existsAfter(/databases/$(database)/documents/movimentos/$(request.resource.data.ultimoMovimentoId))
+        );
+      allow update: if podeEscrever() && produtoValido(request.resource.data)
+        && request.resource.data.codigo == resource.data.codigo
+        && (saldoInalterado() || comMovimentoNovo())
+        && (request.resource.data.ativo == true || request.resource.data.quantidade == 0);
+      allow delete: if ehAdmin() && resource.data.quantidade == 0 && resource.data.ativo == false;
+    }
+
+    // ---------------------------------------------------------------- Movimentações
+    match /movimentos/{movId} {
+      allow read: if autorizado();
+      allow create: if podeEscrever()
+        && request.resource.data.tipo in ['ENTRADA', 'SAIDA', 'AJUSTE_POS', 'AJUSTE_NEG', 'SALDO_INICIAL']
+        && request.resource.data.quantidade is number && request.resource.data.quantidade > 0
+        && request.resource.data.valorTotalCent is int && request.resource.data.valorTotalCent >= 0
+        && request.resource.data.usuarioEmail == meuEmail()
+        && request.resource.data.data == request.time
+        // o produto, após a transação, aponta para este movimento
+        && getAfter(/databases/$(database)/documents/produtos/$(request.resource.data.produtoId)).data.ultimoMovimentoId == movId;
+      allow update, delete: if false;
+    }
+  }
+}
