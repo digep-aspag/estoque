@@ -46,9 +46,10 @@ const tsDate = ts => (ts && typeof ts.toDate === "function") ? ts.toDate() : (ts
 const fmtData = ts => { const d = tsDate(ts); return d ? d.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "—"; };
 const fmtDia = ts => { const d = tsDate(ts); return d ? d.toLocaleDateString("pt-BR") : "—"; };
 const hojeISO = () => new Date().toLocaleDateString("sv-SE");
-const ROTULO_TIPO = { ENTRADA: "Entrada", SAIDA: "Retirada", AJUSTE_POS: "Ajuste (+)", AJUSTE_NEG: "Ajuste (−)", SALDO_INICIAL: "Saldo inicial" };
+const ROTULO_TIPO = { ENTRADA: "Entrada", SAIDA: "Retirada", AJUSTE_POS: "Ajuste (+)", AJUSTE_NEG: "Ajuste (−)", SALDO_INICIAL: "Saldo inicial", ESTORNO_POS: "Estorno (+)", ESTORNO_NEG: "Estorno (−)" };
 const ROTULO_PAPEL = { admin: "Administrador", operador: "Operador", leitor: "Consulta" };
-const ehEntrada = t => t === "ENTRADA" || t === "AJUSTE_POS" || t === "SALDO_INICIAL";
+const ehEntrada = t => N.ehTipoEntrada(t);
+const ehEstorno = t => String(t).startsWith("ESTORNO");
 const podeEscrever = () => ["admin", "operador"].includes(S.perfil?.papel);
 const ehAdmin = () => S.perfil?.papel === "admin";
 
@@ -301,8 +302,10 @@ function atualizarListas() {
     const atual = $(sel).value;
     $(sel).innerHTML = `<option value="">Todas as categorias</option>` + cats.map(c => `<option${c === atual ? " selected" : ""}>${esc(c)}</option>`).join("");
   }
-  const setores = [...new Set([...S.recentes, ...S.doMes].map(m => m.setor).filter(Boolean))].sort();
-  $("#lista-setores").innerHTML = setores.map(s => `<option value="${esc(s)}">`).join("");
+  const movs = [...S.recentes, ...S.doMes, ...S.movConsulta];
+  const unicos = tipo => [...new Set(movs.filter(m => m.tipo === tipo).map(m => m.setor).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  $("#lista-setores").innerHTML = unicos("SAIDA").map(s => `<option value="${esc(s)}">`).join("");
+  $("#lista-fornecedores").innerHTML = unicos("ENTRADA").map(s => `<option value="${esc(s)}">`).join("");
 }
 
 function situacao(p) {
@@ -316,8 +319,8 @@ const ROTULO_SIT = { inativo: "Inativo", zerado: "Zerado", repor: "Repor", ok: "
 /* ---------------------------------------------------------------- PAINEL */
 function renderPainel() {
   const c = N.consolidar(S.produtos);
-  const saidasMes = S.doMes.filter(m => m.tipo === "SAIDA");
-  const entradasMes = S.doMes.filter(m => m.tipo === "ENTRADA");
+  const saidasMes = S.doMes.filter(m => m.tipo === "SAIDA" && !m.estornadoPor);
+  const entradasMes = S.doMes.filter(m => m.tipo === "ENTRADA" && !m.estornadoPor);
   const somaCent = l => l.reduce((s, m) => s + (m.valorTotalCent || 0), 0);
   const mesNome = new Date().toLocaleDateString("pt-BR", { month: "long" });
 
@@ -353,21 +356,34 @@ function renderPainel() {
   $$("#abc-resumo [data-abc]").forEach(b => b.onclick = () => { $("#f-abc").value = b.dataset.abc; irPara("produtos"); renderProdutos(); });
 
   $("#tab-recentes").innerHTML = theadMov(false) + `<tbody>${S.recentes.map(m => linhaMov(m, false)).join("") ||
-    `<tr><td colspan="8" class="vazio">Nenhuma movimentação registrada.</td></tr>`}</tbody>`;
+    `<tr><td colspan="9" class="vazio">Nenhuma movimentação registrada.</td></tr>`}</tbody>`;
 }
 
 function theadMov(completo) {
   return `<thead><tr><th>Data</th><th>Tipo</th><th>Código</th><th>Descrição</th><th class="num">Qtd</th>
-    ${completo ? `<th class="num">Valor unit.</th>` : ""}<th class="num">Valor</th><th>Setor / requisitante</th><th>Documento</th>${completo ? "<th>Usuário</th>" : ""}</tr></thead>`;
+    ${completo ? `<th class="num">Valor unit.</th>` : ""}<th class="num">Valor</th><th>Setor / requisitante</th><th>Documento</th>${completo ? "<th>Usuário</th>" : ""}<th class="acts"></th></tr></thead>`;
+}
+function etiquetasMov(m) {
+  const hist = (m.historico || []).map(h => `${new Date(h.em).toLocaleString("pt-BR")} — ${h.nome || h.por}: ` +
+    Object.entries(h.alteracoes || {}).map(([k, v]) => `${k} "${v.de || "—"}" → "${v.para || "—"}"`).join("; ")).join("\n");
+  return `<span class="etq etq-${m.tipo}">${ROTULO_TIPO[m.tipo] || m.tipo}</span>` +
+    (m.estornadoPor ? ` <span class="etq etq-estornado" title="${esc("Estornado por " + (m.estornadoPorEmail || "") + " — " + (m.motivoEstorno || ""))}">Estornado</span>` : "") +
+    (hist ? `<span class="marca-corr" title="${esc("Dados corrigidos:\n" + hist)}">✎ corrigido</span>` : "");
+}
+function acoesMov(m) {
+  if (!podeEscrever() || !m.id) return "";
+  const podeEstornar = !m.estornadoPor && !ehEstorno(m.tipo);
+  return `${podeEstornar ? `<button class="btn btn-mini" data-estornar="${esc(m.id)}" title="Anular por lançamento inverso">Estornar</button>` : ""}
+    <button class="btn btn-mini" data-corrigir="${esc(m.id)}" title="Corrigir setor, documento ou observação">Corrigir</button>`;
 }
 function linhaMov(m, completo) {
   const sinal = ehEntrada(m.tipo) ? "+" : "−";
-  return `<tr><td class="mono">${fmtData(m.data)}</td><td><span class="etq etq-${m.tipo}">${ROTULO_TIPO[m.tipo] || m.tipo}</span></td>
+  return `<tr class="${m.estornadoPor ? "estornado" : ""}"><td class="mono">${fmtData(m.data)}</td><td>${etiquetasMov(m)}</td>
     <td class="cod">${esc(m.codigo)}</td><td>${esc(m.descricao)}</td>
     <td class="num">${sinal}${N.fmtQtd(m.quantidade)}</td>
     ${completo ? `<td class="num">${N.fmtUnit(m.valorUnitario)}</td>` : ""}
     <td class="num">${N.fmtCent(m.valorTotalCent)}</td><td>${esc(m.setor || "—")}</td><td>${esc(m.documento || "—")}</td>
-    ${completo ? `<td class="pequeno">${esc(m.usuarioNome || m.usuarioEmail)}</td>` : ""}</tr>`;
+    ${completo ? `<td class="pequeno">${esc(m.usuarioNome || m.usuarioEmail)}</td>` : ""}<td class="acts">${acoesMov(m)}</td></tr>`;
 }
 
 /* ---------------------------------------------------------------- PRODUTOS */
@@ -599,6 +615,7 @@ function abrirLancamento(tipo, prodId = null) {
   $("#dl-titulo").textContent = saida ? "Registrar retirada" : "Registrar entrada";
   $("#dl-setor-wrap").firstChild.textContent = saida ? "Setor / requisitante *" : "Fornecedor / origem";
   $("#dl-setor").placeholder = saida ? "Ex.: SUFAM — João da Silva" : "Ex.: Empresa X — Pregão 12/2026";
+  $("#dl-setor").setAttribute("list", saida ? "lista-setores" : "lista-fornecedores");
   $("#dl-doc").placeholder = saida ? "Nº SEI ou requisição" : "Nota fiscal / Nº SEI";
   $("#dl-confirmar").textContent = saida ? "Confirmar retirada" : "Confirmar entrada";
   $("#dl-confirmar").className = "btn " + (saida ? "btn-saida" : "btn-prim");
@@ -774,28 +791,32 @@ async function abrirFicha(id) {
   $("#dlg-kardex").showModal();
   try {
     const snap = await getDocs(query(colMov, where("produtoId", "==", id)));
-    const movs = snap.docs.map(d => d.data({ serverTimestamps: "estimate" }))
+    const movs = snap.docs.map(d => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }))
       .sort((a, b) => (tsDate(a.data)?.getTime() || 0) - (tsDate(b.data)?.getTime() || 0));
     fichaAtual = { p, movs };
     $("#tab-kardex").innerHTML = `<thead><tr><th>Data</th><th>Tipo</th><th>Documento</th><th>Setor / origem</th><th class="num">Entrada</th><th class="num">Saída</th>
-      <th class="num">Valor</th><th class="num">Saldo</th><th class="num">Saldo (R$)</th><th class="num">CMP</th><th>Usuário</th></tr></thead>
-      <tbody>${movs.map(m => `<tr><td class="mono">${fmtData(m.data)}</td><td><span class="etq etq-${m.tipo}">${ROTULO_TIPO[m.tipo]}</span></td>
+      <th class="num">Valor</th><th class="num">Saldo</th><th class="num">Saldo (R$)</th><th class="num">CMP</th><th>Usuário</th><th class="acts"></th></tr></thead>
+      <tbody>${movs.map(m => `<tr class="${m.estornadoPor ? "estornado" : ""}"><td class="mono">${fmtData(m.data)}</td><td>${etiquetasMov(m)}</td>
         <td>${esc(m.documento || "—")}</td><td>${esc(m.setor || "—")}</td>
         <td class="num">${ehEntrada(m.tipo) ? N.fmtQtd(m.quantidade) : ""}</td><td class="num">${ehEntrada(m.tipo) ? "" : N.fmtQtd(m.quantidade)}</td>
         <td class="num">${N.fmtCent(m.valorTotalCent)}</td><td class="num"><b>${N.fmtQtd(m.saldoQtd)}</b></td><td class="num">${N.fmtCent(m.saldoValorCent)}</td>
-        <td class="num">${N.fmtUnit(m.custoMedioApos)}</td><td class="pequeno">${esc(m.usuarioNome || m.usuarioEmail)}</td></tr>`).join("")
-        || `<tr><td colspan="11" class="vazio">Sem movimentações.</td></tr>`}</tbody>`;
+        <td class="num">${N.fmtUnit(m.custoMedioApos)}</td><td class="pequeno">${esc(m.usuarioNome || m.usuarioEmail)}</td><td class="acts">${acoesMov(m)}</td></tr>`).join("")
+        || `<tr><td colspan="12" class="vazio">Sem movimentações.</td></tr>`}</tbody>`;
   } catch (e) { $("#tab-kardex").innerHTML = `<tbody><tr><td class="msg">${esc(msgErro(e))}</td></tr></tbody>`; }
 }
 $("#dk-fechar").onclick = () => $("#dlg-kardex").close();
 $("#dk-csv").onclick = () => {
   if (!fichaAtual) return;
   const { p, movs } = fichaAtual;
-  baixar(`ficha-${p.id}.csv`, N.paraCSV([["Data", "Tipo", "Documento", "Setor/origem", "Entrada", "Saída", "Valor", "Saldo qtd", "Saldo R$", "CMP", "Usuário"],
+  baixar(`ficha-${p.id}.csv`, N.paraCSV([["Data", "Tipo", "Documento", "Setor/origem", "Entrada", "Saída", "Valor", "Saldo qtd", "Saldo R$", "CMP", "Usuário", "Situação"],
     ...movs.map(m => [fmtData(m.data), ROTULO_TIPO[m.tipo], m.documento, m.setor, ehEntrada(m.tipo) ? N.fmtQtd(m.quantidade) : "", ehEntrada(m.tipo) ? "" : N.fmtQtd(m.quantidade),
       (m.valorTotalCent / 100).toFixed(2).replace(".", ","), N.fmtQtd(m.saldoQtd), (m.saldoValorCent / 100).toFixed(2).replace(".", ","),
-      String(m.custoMedioApos).replace(".", ","), m.usuarioNome || m.usuarioEmail])]));
+      String(m.custoMedioApos).replace(".", ","), m.usuarioNome || m.usuarioEmail, situacaoMov(m)])]));
 };
+function situacaoMov(m) {
+  return [m.estornadoPor ? `Estornado: ${m.motivoEstorno || ""}` : "", m.estornoDe ? `Estorno — motivo: ${m.motivoEstorno || ""}` : "",
+    (m.historico || []).length ? `Dados corrigidos (${m.historico.length}x)` : ""].filter(Boolean).join(" | ");
+}
 
 /* ---------------------------------------------------------------- MOVIMENTAÇÕES */
 async function consultarMovimentos() {
@@ -811,34 +832,159 @@ async function consultarMovimentos() {
 }
 function movsFiltrados() {
   const tipo = $("#m-tipo").value, busca = N.normalizar($("#m-busca").value);
-  return S.movConsulta.filter(m => (!tipo || m.tipo.startsWith(tipo)) &&
-    (!busca || N.normalizar(`${m.codigo} ${m.descricao} ${m.setor} ${m.documento} ${m.usuarioNome} ${m.usuarioEmail}`).includes(busca)));
+  const passaTipo = m => !tipo || (tipo === "ESTORNADO" ? !!m.estornadoPor : tipo === "CORRIGIDO" ? (m.historico || []).length > 0 : m.tipo.startsWith(tipo));
+  return S.movConsulta.filter(m => passaTipo(m) &&
+    (!busca || N.normalizar(`${m.codigo} ${m.descricao} ${m.setor} ${m.documento} ${m.observacao} ${m.usuarioNome} ${m.usuarioEmail}`).includes(busca)));
 }
 function renderMovimentos() {
   const l = movsFiltrados();
   const soma = f => l.filter(f).reduce((s, m) => s + m.valorTotalCent, 0);
   $("#resumo-mov").innerHTML = `<span>Lançamentos: <b>${l.length}</b></span>
-    <span>Entradas: <b>${N.fmtCent(soma(m => m.tipo === "ENTRADA" || m.tipo === "SALDO_INICIAL"))}</b></span>
-    <span>Retiradas: <b>${N.fmtCent(soma(m => m.tipo === "SAIDA"))}</b></span>
-    <span>Ajustes (+/−): <b>${N.fmtCent(soma(m => m.tipo === "AJUSTE_POS"))}</b> / <b>${N.fmtCent(soma(m => m.tipo === "AJUSTE_NEG"))}</b></span>`;
-  $("#tab-movimentos").innerHTML = theadMov(true) + `<tbody>${l.map(m => linhaMov(m, true)).join("") || `<tr><td colspan="10" class="vazio">Nenhuma movimentação no período.</td></tr>`}</tbody>`;
+    <span>Entradas: <b>${N.fmtCent(soma(m => (m.tipo === "ENTRADA" || m.tipo === "SALDO_INICIAL") && !m.estornadoPor))}</b></span>
+    <span>Retiradas: <b>${N.fmtCent(soma(m => m.tipo === "SAIDA" && !m.estornadoPor))}</b></span>
+    <span>Ajustes (+/−): <b>${N.fmtCent(soma(m => m.tipo === "AJUSTE_POS" && !m.estornadoPor))}</b> / <b>${N.fmtCent(soma(m => m.tipo === "AJUSTE_NEG" && !m.estornadoPor))}</b></span>
+    <span>Estornos: <b>${l.filter(m => ehEstorno(m.tipo)).length}</b></span>
+    <span class="pequeno">(entradas, retiradas e ajustes já desconsideram os lançamentos estornados)</span>`;
+  $("#tab-movimentos").innerHTML = theadMov(true) + `<tbody>${l.map(m => linhaMov(m, true)).join("") || `<tr><td colspan="11" class="vazio">Nenhuma movimentação no período.</td></tr>`}</tbody>`;
 }
 $("#btn-m-filtrar").onclick = consultarMovimentos;
 for (const id of ["#m-ini", "#m-fim"]) $(id).onchange = consultarMovimentos;
 for (const id of ["#m-tipo", "#m-busca"]) $(id).addEventListener("input", renderMovimentos);
 $("#btn-exp-mov").onclick = () => baixar(`movimentacoes-${$("#m-ini").value}-a-${$("#m-fim").value}.csv`, N.paraCSV([
-  ["Data", "Tipo", "Código", "Descrição", "Unidade", "Quantidade", "Valor unitário", "Valor total", "Saldo após", "Setor/origem", "Documento", "Observação", "Usuário", "Lote"],
+  ["Data", "Tipo", "Código", "Descrição", "Unidade", "Quantidade", "Valor unitário", "Valor total", "Saldo após", "Setor/origem", "Documento", "Observação", "Usuário", "Lote", "Situação"],
   ...movsFiltrados().map(m => [fmtData(m.data), ROTULO_TIPO[m.tipo], m.codigo, m.descricao, m.unidade, N.fmtQtd(m.quantidade),
     String(m.valorUnitario).replace(".", ","), (m.valorTotalCent / 100).toFixed(2).replace(".", ","), N.fmtQtd(m.saldoQtd),
-    m.setor, m.documento, m.observacao, m.usuarioNome || m.usuarioEmail, m.loteId || ""])]));
+    m.setor, m.documento, m.observacao, m.usuarioNome || m.usuarioEmail, m.loteId || "", situacaoMov(m)])]));
 $("#btn-imprimir-mov").onclick = () => {
   const l = movsFiltrados();
   imprimir(`Movimentações de ${new Date($("#m-ini").value + "T12:00").toLocaleDateString("pt-BR")} a ${new Date($("#m-fim").value + "T12:00").toLocaleDateString("pt-BR")}`,
     `<table><thead><tr><th>Data</th><th>Tipo</th><th>Código</th><th>Descrição</th><th class="num">Qtd</th><th class="num">Valor</th><th>Setor</th><th>Documento</th><th>Usuário</th></tr></thead><tbody>
-    ${l.map(m => `<tr><td>${fmtData(m.data)}</td><td>${ROTULO_TIPO[m.tipo]}</td><td class="cod">${esc(m.codigo)}</td><td>${esc(m.descricao)}</td>
+    ${l.map(m => `<tr><td>${fmtData(m.data)}</td><td>${ROTULO_TIPO[m.tipo]}${m.estornadoPor ? " (ESTORNADO)" : ""}</td><td class="cod">${esc(m.codigo)}</td><td>${esc(m.descricao)}</td>
     <td class="num">${ehEntrada(m.tipo) ? "+" : "−"}${N.fmtQtd(m.quantidade)}</td><td class="num">${N.fmtCent(m.valorTotalCent)}</td>
     <td>${esc(m.setor)}</td><td>${esc(m.documento)}</td><td>${esc(m.usuarioNome || m.usuarioEmail)}</td></tr>`).join("")}</tbody></table>`);
 };
+
+/* ---------------------------------------------------------------- ESTORNO E CORREÇÃO DE MOVIMENTAÇÕES */
+function acharMov(id) {
+  for (const l of [S.movConsulta, S.recentes, S.doMes, fichaAtual?.movs || []]) { const m = l.find(x => x.id === id); if (m) return m; }
+  return null;
+}
+async function aposAlterarMov() {
+  if (S.movConsulta.length || S.vista === "movimentos") await consultarMovimentos();
+  if ($("#dlg-kardex").open && fichaAtual) await abrirFicha(fichaAtual.p.id);
+}
+function resumoOriginal(m) {
+  return `<b>${ROTULO_TIPO[m.tipo]}</b> de ${fmtData(m.data)} — <span class="mono">${esc(m.codigo)}</span> ${esc(m.descricao)}<br>
+    Quantidade: <b>${ehEntrada(m.tipo) ? "+" : "−"}${N.fmtQtd(m.quantidade)} ${esc(m.unidade || "")}</b> · Valor: <b>${N.fmtCent(m.valorTotalCent)}</b><br>
+    ${ehEntrada(m.tipo) ? "Fornecedor/origem" : "Setor/requisitante"}: ${esc(m.setor || "—")} · Documento: ${esc(m.documento || "—")} · Lançado por: ${esc(m.usuarioNome || m.usuarioEmail)}`;
+}
+
+let movEstorno = null;
+document.addEventListener("click", e => {
+  const b1 = e.target.closest("[data-estornar]"); if (b1) abrirEstorno(b1.dataset.estornar);
+  const b2 = e.target.closest("[data-corrigir]"); if (b2) abrirCorrecao(b2.dataset.corrigir);
+});
+
+function abrirEstorno(id) {
+  const m = acharMov(id); if (!m) return toast("Movimentação não encontrada. Recarregue a página.", true);
+  movEstorno = m;
+  const p = S.porId.get(m.produtoId);
+  $("#de-original").innerHTML = resumoOriginal(m);
+  $("#de-motivo").value = ""; $("#de-msg").textContent = "";
+  let ok = true;
+  try {
+    if (!p) throw new Error("O produto desta movimentação foi excluído.");
+    if (p.ativo === false) throw new Error("O produto está inativo. Reative-o em Produtos → Editar antes de estornar.");
+    const r = N.aplicarEstorno({ quantidade: p.quantidade, valorTotalCent: p.valorTotalCent }, m.tipo, m.quantidade, m.valorTotalCent);
+    $("#de-previa").innerHTML = `<b>Efeito do estorno (${ROTULO_TIPO[r.tipo]}):</b><br>
+      Saldo: ${N.fmtQtd(p.quantidade)} → <b>${N.fmtQtd(r.novo.quantidade)}</b> ${esc(p.unidade)} ·
+      Valor total: ${N.fmtCent(p.valorTotalCent)} → <b>${N.fmtCent(r.novo.valorTotalCent)}</b> · CMP: <b>${N.fmtUnit(r.custoMedio)}</b>
+      ${r.diferencaCent ? `<br><span class="muted">O item será zerado; o valor baixado (${N.fmtCent(r.valorMovCent)}) difere do original em ${N.fmtCent(r.diferencaCent)} por efeito da média ponderada.</span>` : ""}`;
+  } catch (e) { ok = false; $("#de-previa").innerHTML = `<span class="msg">${esc(e.message)}</span>`; }
+  $("#de-confirmar").disabled = !ok;
+  $("#dlg-estorno").showModal();
+  if (ok) $("#de-motivo").focus();
+}
+
+$("#form-estorno").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const motivo = $("#de-motivo").value.trim(), msg = $("#de-msg"), m = movEstorno;
+  if (motivo.length < 10) { msg.textContent = "Descreva a justificativa (mínimo 10 caracteres)."; return $("#de-motivo").focus(); }
+  const btn = $("#de-confirmar"); btn.disabled = true; msg.textContent = "";
+  try {
+    const prodRef = doc(colProd, m.produtoId), origRef = doc(colMov, m.id), novoRef = doc(colMov);
+    const r = await runTransaction(db, async tx => {
+      const [ps, os] = await Promise.all([tx.get(prodRef), tx.get(origRef)]);
+      if (!os.exists()) throw new Error("Movimentação original não encontrada.");
+      const o = os.data();
+      if (o.estornadoPor) throw new Error("Esta movimentação já foi estornada.");
+      if (!ps.exists()) throw new Error("O produto desta movimentação foi excluído.");
+      const p = ps.data();
+      if (p.ativo === false) throw new Error("O produto está inativo. Reative-o antes de estornar.");
+      const r = N.aplicarEstorno({ quantidade: p.quantidade, valorTotalCent: p.valorTotalCent }, o.tipo, o.quantidade, o.valorTotalCent);
+      tx.set(novoRef, {
+        ...montarMov(r.tipo, m.produtoId, p, r, r.novo, {
+          setor: o.setor, documento: `Estorno de ${ROTULO_TIPO[o.tipo].toLowerCase()} de ${fmtDia(o.data)}${o.documento ? " — " + o.documento : ""}`, observacao: motivo,
+        }),
+        estornoDe: m.id, motivoEstorno: motivo,
+      });
+      tx.update(origRef, { estornadoPor: novoRef.id, estornadoEm: serverTimestamp(), estornadoPorEmail: S.email, motivoEstorno: motivo });
+      tx.update(prodRef, {
+        quantidade: r.novo.quantidade, valorTotalCent: r.novo.valorTotalCent, custoMedio: r.custoMedio,
+        ultimoMovimentoId: novoRef.id, atualizadoEm: serverTimestamp(), atualizadoPor: S.email,
+      });
+      return r;
+    });
+    $("#dlg-estorno").close();
+    toast(`Estorno registrado: ${ehEntrada(r.tipo) ? "+" : "−"}${N.fmtQtd(r.quantidade)}, ${N.fmtCent(r.valorMovCent)}. Estoque recalculado.`);
+    await aposAlterarMov();
+  } catch (e) { msg.textContent = msgErro(e); }
+  finally { btn.disabled = false; }
+});
+
+$("#de-motivo").addEventListener("input", () => { $("#de-msg").textContent = ""; });
+
+let movCorrecao = null;
+function abrirCorrecao(id) {
+  const m = acharMov(id); if (!m) return toast("Movimentação não encontrada. Recarregue a página.", true);
+  movCorrecao = m;
+  const fornecedor = m.tipo === "ENTRADA";
+  $("#dc2-original").innerHTML = resumoOriginal(m);
+  $("#dc2-setor-rot").firstChild.textContent = fornecedor ? "Fornecedor / origem" : "Setor / requisitante";
+  $("#dc2-setor").setAttribute("list", fornecedor ? "lista-fornecedores" : "lista-setores");
+  $("#dc2-setor").value = m.setor || ""; $("#dc2-doc").value = m.documento || ""; $("#dc2-obs").value = m.observacao || "";
+  const hist = m.historico || [];
+  $("#dc2-hist").innerHTML = hist.length ? `<div class="hist"><b>Correções anteriores</b>${hist.map(h => `<div>${new Date(h.em).toLocaleString("pt-BR")} — ${esc(h.nome || h.por)}: ${
+    Object.entries(h.alteracoes || {}).map(([k, v]) => `${esc(k)} "${esc(v.de || "—")}" → "${esc(v.para || "—")}"`).join("; ")}</div>`).join("")}</div>` : "";
+  $("#dc2-msg").textContent = "";
+  $("#dlg-corrigir").showModal();
+  $("#dc2-setor").focus();
+}
+
+$("#form-corrigir").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const m = movCorrecao, msg = $("#dc2-msg"); msg.textContent = "";
+  const novos = { setor: $("#dc2-setor").value.trim(), documento: $("#dc2-doc").value.trim(), observacao: $("#dc2-obs").value.trim() };
+  if (m.tipo === "SAIDA" && !novos.setor) return msg.textContent = "Retiradas precisam de setor/requisitante.";
+  const btn = $("#dc2-salvar"); btn.disabled = true;
+  try {
+    const ref = doc(colMov, m.id);
+    await runTransaction(db, async tx => {
+      const s = await tx.get(ref); if (!s.exists()) throw new Error("Movimentação não encontrada.");
+      const o = s.data(), alteracoes = {};
+      for (const k of ["setor", "documento", "observacao"]) if ((o[k] || "") !== novos[k]) alteracoes[k] = { de: o[k] || "", para: novos[k] };
+      if (!Object.keys(alteracoes).length) throw new Error("Nenhum dado foi alterado.");
+      tx.update(ref, {
+        ...novos, corrigidoEm: serverTimestamp(), corrigidoPor: S.email,
+        historico: [...(o.historico || []), { em: new Date().toISOString(), por: S.email, nome: S.perfil?.nome || "", alteracoes }],
+      });
+    });
+    $("#dlg-corrigir").close();
+    toast("Dados da movimentação corrigidos. O histórico da alteração foi registrado.");
+    await aposAlterarMov();
+  } catch (e) { msg.textContent = msgErro(e); }
+  finally { btn.disabled = false; }
+});
 
 /* ---------------------------------------------------------------- INVENTÁRIO */
 function lerInv() { try { return JSON.parse(localStorage.getItem(INV_KEY)) || { cont: {}, base: {} }; } catch { return { cont: {}, base: {} }; } }

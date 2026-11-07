@@ -7,7 +7,9 @@ rules_version = '2';
 // • Só entra quem tem documento em /usuarios/{email} com ativo == true.
 // • E-mail precisa estar verificado (impede cadastro com e-mail alheio).
 // • Perfis: admin (tudo) · operador (cadastra/movimenta) · leitor (consulta).
-// • Movimentações são IMUTÁVEIS (sem edição/exclusão) — trilha de auditoria.
+// • Movimentações não são excluídas nem têm quantidade/valor alterados.
+//   Erros são corrigidos por ESTORNO (lançamento inverso, com justificativa)
+//   ou, para setor/documento/observação, por correção com histórico.
 // • Saldo de produto só muda junto com uma movimentação gravada na mesma
 //   transação (vínculo ultimoMovimentoId ↔ movimento).
 // ============================================================================
@@ -78,17 +80,50 @@ service cloud.firestore {
     }
 
     // ---------------------------------------------------------------- Movimentações
+    function caminhoMov(id) { return /databases/$(database)/documents/movimentos/$(id); }
+    function camposAlterados() { return request.resource.data.diff(resource.data).affectedKeys(); }
+
+    // Estorno: o lançamento inverso aponta para o original, e o original
+    // (na mesma transação) passa a apontar para o estorno.
+    function estornoValido(movId) {
+      return !(request.resource.data.tipo in ['ESTORNO_POS', 'ESTORNO_NEG'])
+        || (request.resource.data.estornoDe is string
+            && request.resource.data.motivoEstorno is string
+            && request.resource.data.motivoEstorno.size() >= 10
+            && getAfter(caminhoMov(request.resource.data.estornoDe)).data.estornadoPor == movId);
+    }
+    // Marca o original como estornado (uma única vez, sem tocar em valores).
+    function marcacaoEstorno(movId) {
+      return camposAlterados().hasOnly(['estornadoPor', 'estornadoEm', 'estornadoPorEmail', 'motivoEstorno'])
+        && resource.data.get('estornadoPor', null) == null
+        && !(resource.data.tipo in ['ESTORNO_POS', 'ESTORNO_NEG'])
+        && request.resource.data.estornadoPorEmail == meuEmail()
+        && request.resource.data.estornadoEm == request.time
+        && getAfter(caminhoMov(request.resource.data.estornadoPor)).data.estornoDe == movId;
+    }
+    // Correção de dados complementares (setor, documento, observação), com histórico.
+    function correcaoDados() {
+      return camposAlterados().hasOnly(['setor', 'documento', 'observacao', 'historico', 'corrigidoEm', 'corrigidoPor'])
+        && request.resource.data.corrigidoPor == meuEmail()
+        && request.resource.data.corrigidoEm == request.time
+        && request.resource.data.historico is list
+        && request.resource.data.historico.size() == resource.data.get('historico', []).size() + 1;
+    }
+
     match /movimentos/{movId} {
       allow read: if autorizado();
       allow create: if podeEscrever()
-        && request.resource.data.tipo in ['ENTRADA', 'SAIDA', 'AJUSTE_POS', 'AJUSTE_NEG', 'SALDO_INICIAL']
+        && request.resource.data.tipo in ['ENTRADA', 'SAIDA', 'AJUSTE_POS', 'AJUSTE_NEG', 'SALDO_INICIAL', 'ESTORNO_POS', 'ESTORNO_NEG']
         && request.resource.data.quantidade is number && request.resource.data.quantidade > 0
         && request.resource.data.valorTotalCent is int && request.resource.data.valorTotalCent >= 0
         && request.resource.data.usuarioEmail == meuEmail()
         && request.resource.data.data == request.time
+        && estornoValido(movId)
         // o produto, após a transação, aponta para este movimento
         && getAfter(/databases/$(database)/documents/produtos/$(request.resource.data.produtoId)).data.ultimoMovimentoId == movId;
-      allow update, delete: if false;
+      // Quantidade, valor, tipo, produto, data e usuário nunca mudam.
+      allow update: if podeEscrever() && (marcacaoEstorno(movId) || correcaoDados());
+      allow delete: if false;
     }
   }
 }

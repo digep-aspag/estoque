@@ -107,6 +107,39 @@ export function aplicarAjuste(estado, qtdContada, valorUnitSeZerado = 0) {
   return { tipo: 'AJUSTE_NEG', ...aplicarSaida(estado, -dif) };
 }
 
+/* Tipos de movimentação que aumentam o estoque. */
+export const TIPOS_ENTRADA = ['ENTRADA', 'SALDO_INICIAL', 'AJUSTE_POS', 'ESTORNO_POS'];
+export const ehTipoEntrada = t => TIPOS_ENTRADA.includes(t);
+
+/**
+ * ESTORNO — lançamento inverso, pelo MESMO valor do lançamento original.
+ * Estorno de saída (SAIDA, AJUSTE_NEG)  → ESTORNO_POS: devolve qtd e valor.
+ * Estorno de entrada (ENTRADA, SALDO_INICIAL, AJUSTE_POS) → ESTORNO_NEG:
+ *   retira qtd e valor; exige saldo suficiente. Se zerar o item, baixa o
+ *   saldo financeiro inteiro (diferencaCent registra o desvio em relação
+ *   ao valor original, decorrente da média ponderada).
+ */
+export function aplicarEstorno(estado, tipoOriginal, qtd, valorCent) {
+  if (String(tipoOriginal).startsWith('ESTORNO')) throw new Error('Não é possível estornar um estorno.');
+  const q = validarQtd(qtd);
+  const v = Math.round(Number(valorCent));
+  if (!Number.isFinite(v) || v < 0) throw new Error('Valor do lançamento original inválido.');
+  if (!ehTipoEntrada(tipoOriginal)) {
+    const novo = { quantidade: arredQtd(estado.quantidade + q), valorTotalCent: estado.valorTotalCent + v };
+    return { tipo: 'ESTORNO_POS', novo, quantidade: q, valorMovCent: v, valorUnit: v / q / 100, custoMedio: custoMedio(novo), diferencaCent: 0 };
+  }
+  if (q > estado.quantidade + 1e-9) {
+    throw new Error(`Saldo atual (${fmtQtd(estado.quantidade)}) é menor que a quantidade a estornar (${fmtQtd(q)}): parte já foi retirada. Estorne antes as retiradas posteriores ou use o inventário.`);
+  }
+  const zera = arredQtd(estado.quantidade - q) === 0;
+  if (!zera && v > estado.valorTotalCent) {
+    throw new Error('O valor a estornar excede o saldo financeiro do item. Use o ajuste de inventário.');
+  }
+  const valorMovCent = zera ? estado.valorTotalCent : v;
+  const novo = { quantidade: zera ? 0 : arredQtd(estado.quantidade - q), valorTotalCent: estado.valorTotalCent - valorMovCent };
+  return { tipo: 'ESTORNO_NEG', novo, quantidade: q, valorMovCent, valorUnit: valorMovCent / q / 100, custoMedio: custoMedio(novo), diferencaCent: valorMovCent - v };
+}
+
 /**
  * CURVA ABC (Pareto) por valor imobilizado.
  * A: até 80% do valor acumulado · B: até 95% · C: restante.

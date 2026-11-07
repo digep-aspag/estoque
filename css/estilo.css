@@ -161,6 +161,17 @@ legend { font-size: 12px; font-weight: 600; color: var(--muted); padding: 0 4px;
 .etq-ok { background: #E7F3EC; color: var(--verde-escuro); }
 .etq-inativo { background: #EEE; color: #777; }
 .etq-A { background: #0F2A3D; color: #fff; } .etq-B { background: #2F6DA3; color: #fff; } .etq-C { background: #DCE6EE; color: var(--navy); }
+.etq-ESTORNO_POS, .etq-ESTORNO_NEG { background: #EDE7F6; color: #5B3A99; }
+.etq-estornado { background: #EEE; color: #666; border: 1px dashed #AAA; }
+.tabela tr.estornado td:not(.acts) { color: #9AA1A8; }
+.tabela tr.estornado td.num { text-decoration: line-through; }
+.marca-corr { font-size: 11px; color: var(--azul); cursor: help; margin-left: 4px; }
+.quadro { background: var(--fundo); border: 1px solid var(--borda); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; font-size: 13px; line-height: 1.6; }
+.quadro-previa { background: #F5F1FB; border-color: #DCCFF0; }
+.quadro b { font-variant-numeric: tabular-nums; }
+.hist { font-size: 12px; border-top: 1px dashed var(--borda); padding-top: 8px; margin-top: 4px; }
+.hist div { padding: 3px 0; color: var(--muted); }
+textarea { font: 400 14px var(--sans); color: var(--texto); padding: 8px 10px; border: 1px solid var(--borda); border-radius: 8px; resize: vertical; }
 .dif-pos { color: var(--verde-escuro); font-weight: 600; } .dif-neg { color: var(--vermelho); font-weight: 600; }
 
 .filtros { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }

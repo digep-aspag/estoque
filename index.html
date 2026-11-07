@@ -168,6 +168,9 @@
           <option value="SAIDA">Retiradas</option>
           <option value="AJUSTE">Ajustes de inventário</option>
           <option value="SALDO_INICIAL">Saldos iniciais</option>
+          <option value="ESTORNO">Estornos</option>
+          <option value="ESTORNADO">Estornadas (anuladas)</option>
+          <option value="CORRIGIDO">Com dados corrigidos</option>
         </select>
         <input type="search" id="m-busca" placeholder="Produto, setor, documento ou usuário…">
         <button class="btn" id="btn-m-filtrar">Consultar</button>
@@ -287,6 +290,41 @@
   </div>
 </dialog>
 
+<dialog id="dlg-estorno" class="dlg">
+  <form id="form-estorno" novalidate>
+    <h2 class="serif">Estornar movimentação</h2>
+    <div id="de-original" class="quadro"></div>
+    <div id="de-previa" class="quadro quadro-previa"></div>
+    <label>Justificativa do estorno * <span class="muted">(mínimo 10 caracteres — fica registrada na auditoria)</span>
+      <textarea id="de-motivo" rows="3" maxlength="300" placeholder="Ex.: retirada lançada em duplicidade; quantidade digitada errada (era 6, foi lançado 26)"></textarea>
+    </label>
+    <p class="msg" id="de-msg" role="alert"></p>
+    <div class="dlg-acoes">
+      <button class="btn" type="button" data-fechar>Cancelar</button>
+      <button class="btn btn-saida" type="submit" id="de-confirmar">Confirmar estorno</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-corrigir" class="dlg">
+  <form id="form-corrigir" novalidate>
+    <h2 class="serif">Corrigir dados da movimentação</h2>
+    <div id="dc2-original" class="quadro"></div>
+    <p class="muted pequeno">Quantidade e valor não podem ser alterados aqui. Para isso, use <b>Estornar</b> e lance novamente.</p>
+    <div class="grade-form">
+      <label class="col-2" id="dc2-setor-rot">Setor / requisitante<input id="dc2-setor" maxlength="120"></label>
+      <label class="col-2">Documento<input id="dc2-doc" maxlength="80"></label>
+      <label class="col-2">Observação<input id="dc2-obs" maxlength="300"></label>
+    </div>
+    <div id="dc2-hist"></div>
+    <p class="msg" id="dc2-msg" role="alert"></p>
+    <div class="dlg-acoes">
+      <button class="btn" type="button" data-fechar>Cancelar</button>
+      <button class="btn btn-prim" type="submit" id="dc2-salvar">Salvar correção</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="dlg-confirma" class="dlg">
   <h2 class="serif" id="dc-titulo">Confirmar</h2>
   <div id="dc-texto"></div>
@@ -299,6 +337,7 @@
 <datalist id="lista-unidades"><option>UN</option><option>CX</option><option>PCT</option><option>RESMA</option><option>KG</option><option>L</option><option>M</option><option>PAR</option><option>FRASCO</option><option>ROLO</option></datalist>
 <datalist id="lista-categorias"></datalist>
 <datalist id="lista-setores"></datalist>
+<datalist id="lista-fornecedores"></datalist>
 <datalist id="lista-produtos"></datalist>
 
 <div id="cab-impressao" class="so-impressao">

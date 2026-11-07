@@ -79,6 +79,40 @@ t('Sequência longa mantém consistência (soma de baixas = entradas − saldo)'
   }
 });
 
+t('Estorno de retirada devolve qtd e valor originais', () => {
+  // Luva: 50 × 18,90 = 945,00 ; −10 (189,00) ; −26 (491,40) → 14 / 264,60
+  const e = { quantidade: 14, valorTotalCent: 26460 };
+  const r = N.aplicarEstorno(e, 'SAIDA', 26, 49140);
+  assert.equal(r.tipo, 'ESTORNO_POS');
+  assert.deepEqual(r.novo, { quantidade: 40, valorTotalCent: 75600 });
+  assert.equal(r.custoMedio, 18.9);
+});
+
+t('Estorno de entrada: parcial, total e saldo insuficiente', () => {
+  // 10 × 17,00 + 50 × 18,90 = 1.115,00 / 60
+  const e = { quantidade: 60, valorTotalCent: 111500 };
+  const r = N.aplicarEstorno(e, 'ENTRADA', 50, 94500);
+  assert.deepEqual(r.novo, { quantidade: 10, valorTotalCent: 17000 });
+  assert.equal(r.tipo, 'ESTORNO_NEG');
+  // após retirada de 20 (CMP 18,5833 → 371,67): 40 / 743,33 — não comporta estornar 50
+  assert.throws(() => N.aplicarEstorno({ quantidade: 40, valorTotalCent: 74333 }, 'ENTRADA', 50, 94500), /Saldo atual/);
+  // zera o item: baixa o saldo financeiro inteiro e registra a diferença
+  const z = N.aplicarEstorno({ quantidade: 50, valorTotalCent: 94400 }, 'SALDO_INICIAL', 50, 94500);
+  assert.deepEqual(z.novo, { quantidade: 0, valorTotalCent: 0 });
+  assert.equal(z.diferencaCent, -100);
+  assert.throws(() => N.aplicarEstorno(e, 'ESTORNO_POS', 1, 100), /estorno/);
+});
+
+t('Entrada seguida de estorno restaura exatamente o estado', () => {
+  const e0 = { quantidade: 37, valorTotalCent: 98765 };
+  const a = N.aplicarEntrada(e0, 13, 4.37);
+  const b = N.aplicarEstorno(a.novo, 'ENTRADA', 13, a.valorMovCent);
+  assert.deepEqual(b.novo, e0);
+  const s = N.aplicarSaida(e0, 9);
+  const c = N.aplicarEstorno(s.novo, 'SAIDA', 9, s.valorMovCent);
+  assert.deepEqual(c.novo, e0);
+});
+
 t('Curva ABC', () => {
   const m = N.curvaABC([
     { id: 'a', valorTotalCent: 7000 }, { id: 'b', valorTotalCent: 2000 },
