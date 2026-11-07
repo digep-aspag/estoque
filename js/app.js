@@ -616,10 +616,27 @@ function addItemLanc(prodId = null) {
   renderLanc();
 }
 
+/**
+ * Localiza o produto digitado: aceita a sugestão da lista ("COD — descrição"),
+ * só o código, a descrição completa ou parte única dela.
+ * Devolve { p } ou { erro }.
+ */
 function resolverProd(txt) {
-  const cod = String(txt || "").split(" — ")[0].trim();
-  if (!cod) return null;
-  try { const p = S.porId.get(N.idDoCodigo(cod)); return p && p.ativo !== false ? p : null; } catch { return null; }
+  const t = String(txt || "").trim();
+  if (!t) return { erro: "Informe o produto" };
+  const ativos = S.produtos.filter(p => p.ativo !== false);
+  if (!ativos.length) return { erro: "Nenhum produto cadastrado — cadastre primeiro em Produtos" };
+  try { // 1) código (ou "código — descrição" escolhido na lista)
+    const p = S.porId.get(N.idDoCodigo(t.split(" — ")[0]));
+    if (p && p.ativo !== false) return { p };
+  } catch { /* não é código válido */ }
+  const n = N.normalizar(t).replace(/\s+/g, " ");
+  const exatos = ativos.filter(p => N.normalizar(p.descricao).replace(/\s+/g, " ") === n);
+  if (exatos.length === 1) return { p: exatos[0] };
+  const parciais = ativos.filter(p => N.normalizar(`${p.codigo} ${p.descricao}`).replace(/\s+/g, " ").includes(n));
+  if (parciais.length === 1) return { p: parciais[0] };
+  if (parciais.length > 1 || exatos.length > 1) return { erro: `${Math.max(parciais.length, exatos.length)} produtos correspondem — escolha na lista de sugestões` };
+  return { erro: "Produto não cadastrado — cadastre primeiro em Produtos" };
 }
 
 function renderLanc() {
@@ -633,7 +650,12 @@ function renderLanc() {
       <td>${S.lanc.itens.length > 1 ? `<button type="button" class="btn btn-mini" data-rm="${i}" aria-label="Remover">✕</button>` : ""}</td></tr>`).join("")}</tbody>`;
   $$("#tab-lanc tbody tr").forEach(tr => {
     const it = S.lanc.itens[+tr.dataset.i];
-    tr.querySelector(".in-prod").oninput = e => { it.prodTxt = e.target.value; atualizarPreviaLanc(); };
+    const inProd = tr.querySelector(".in-prod");
+    inProd.oninput = e => { it.prodTxt = e.target.value; atualizarPreviaLanc(); };
+    inProd.onchange = () => {
+      const { p } = resolverProd(inProd.value);
+      if (p) { it.prodTxt = inProd.value = `${p.codigo} — ${p.descricao}`; atualizarPreviaLanc(); }
+    };
     tr.querySelector(".in-qtd").oninput = e => { it.qtdTxt = e.target.value; atualizarPreviaLanc(); };
     const vu = tr.querySelector(".in-vu"); if (vu) vu.oninput = e => { it.vuTxt = e.target.value; atualizarPreviaLanc(); };
   });
@@ -646,8 +668,8 @@ function calcularLanc() {
   const saida = S.lanc.tipo === "SAIDA", vistos = new Set();
   return S.lanc.itens.map(it => {
     if (!it.prodTxt.trim() && !it.qtdTxt.trim()) return { vazio: true };
-    const p = resolverProd(it.prodTxt);
-    if (!p) return { erro: "Produto não encontrado" };
+    const { p, erro } = resolverProd(it.prodTxt);
+    if (!p) return { erro };
     if (vistos.has(p.id)) return { erro: "Produto repetido na lista", p };
     vistos.add(p.id);
     const q = N.lerNumeroBR(it.qtdTxt);
