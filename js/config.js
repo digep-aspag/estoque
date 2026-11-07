@@ -9,18 +9,18 @@
    ========================================================================== */
 
 export const firebaseConfig = {
-  apiKey: "COLE_AQUI",
-  authDomain: "SEU-PROJETO.firebaseapp.com",
-  projectId: "SEU-PROJETO",
-  storageBucket: "SEU-PROJETO.appspot.com",
-  messagingSenderId: "000000000000",
-  appId: "1:000000000000:web:0000000000000000"
+  apiKey: "AIzaSyDe1Zo4pP5v6bb6_i4VvW12MoBCxr2K_sE",
+  authDomain: "portal-estoque-material.firebaseapp.com",
+  projectId: "portal-estoque-material",
+  storageBucket: "portal-estoque-material.firebasestorage.app",
+  messagingSenderId: "672345030723",
+  appId: "1:672345030723:web:f4ee9220905c9c645414f6"
 };
 
 /* Textos institucionais exibidos na interface e nos relatórios impressos. */
 export const INSTITUICAO = {
   sigla: "IBRAM-DF",
-  unidade: "DIGEP · ASPAG — IBRAM-DF",
+  unidade: "DIGEP — IBRAM-DF",
   sistema: "Controle de Estoque",
   nomeCompleto: "Instituto do Meio Ambiente e dos Recursos Hídricos do Distrito Federal — Brasília Ambiental",
 };
