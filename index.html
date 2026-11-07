@@ -263,7 +263,7 @@
   <form method="dialog" id="form-lanc" novalidate>
     <h2 class="serif" id="dl-titulo">Registrar retirada</h2>
     <div class="grade-form">
-      <label id="dl-setor-wrap">Setor / requisitante<input id="dl-setor" maxlength="120" list="lista-setores" placeholder="Ex.: SUFAM — João da Silva"></label>
+      <label id="dl-setor-wrap">Setor / requisitante<input id="dl-setor" autocomplete="off" maxlength="120" list="lista-setores" placeholder="Ex.: SUFAM — João da Silva"></label>
       <label>Documento<input id="dl-doc" maxlength="80" placeholder="Nº SEI, requisição ou nota fiscal"></label>
       <label class="col-2">Observação<input id="dl-obs" maxlength="300"></label>
     </div>
@@ -312,7 +312,7 @@
     <div id="dc2-original" class="quadro"></div>
     <p class="muted pequeno">Quantidade e valor não podem ser alterados aqui. Para isso, use <b>Estornar</b> e lance novamente.</p>
     <div class="grade-form">
-      <label class="col-2" id="dc2-setor-rot">Setor / requisitante<input id="dc2-setor" maxlength="120"></label>
+      <label class="col-2" id="dc2-setor-rot">Setor / requisitante<input id="dc2-setor" autocomplete="off" maxlength="120"></label>
       <label class="col-2">Documento<input id="dc2-doc" maxlength="80"></label>
       <label class="col-2">Observação<input id="dc2-obs" maxlength="300"></label>
     </div>
