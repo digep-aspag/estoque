@@ -240,7 +240,7 @@
       <label>Categoria<input id="p-categoria" maxlength="60" list="lista-categorias" placeholder="Ex.: Material de expediente"></label>
       <label>Localização<input id="p-local" maxlength="60" placeholder="Ex.: Almoxarifado — prateleira B3"></label>
       <label>Estoque mínimo<input id="p-minimo" inputmode="decimal" placeholder="0"></label>
-      <span></span>
+      <label>Nº do C.A.<input id="p-ca" maxlength="20" inputmode="numeric" placeholder="Somente para EPI — ex.: 12345"></label>
       <fieldset class="col-2" id="p-saldo-inicial">
         <legend>Saldo inicial</legend>
         <div class="grade-3">
@@ -267,6 +267,10 @@
       <label>Documento<input id="dl-doc" maxlength="80" placeholder="Nº SEI, requisição ou nota fiscal"></label>
       <label class="col-2">Observação<input id="dl-obs" maxlength="300"></label>
     </div>
+    <details class="bloco-ficha" id="dl-ficha" open>
+      <summary>Dados da Ficha de Substituição/Reposição de EPI <span class="muted">(opcional — o que ficar em branco sai em branco na ficha, para preenchimento à mão)</span></summary>
+      <div data-ficha="dl"></div>
+    </details>
     <div class="tabela-wrap">
       <table class="tabela tabela-lanc" id="tab-lanc"></table>
     </div>
@@ -316,6 +320,10 @@
       <label class="col-2">Documento<input id="dc2-doc" maxlength="80"></label>
       <label class="col-2">Observação<input id="dc2-obs" maxlength="300"></label>
     </div>
+    <details class="bloco-ficha" id="dc2-ficha" open>
+      <summary>Dados da Ficha de EPI</summary>
+      <div data-ficha="dc2"></div>
+    </details>
     <div id="dc2-hist"></div>
     <p class="msg" id="dc2-msg" role="alert"></p>
     <div class="dlg-acoes">

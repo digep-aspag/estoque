@@ -374,8 +374,10 @@ function acoesMov(m) {
   if (!podeEscrever() || !m.id) return "";
   const podeEstornar = !m.estornadoPor && !ehEstorno(m.tipo);
   return `${podeEstornar ? `<button class="btn btn-mini" data-estornar="${esc(m.id)}" title="Anular por lançamento inverso">Estornar</button>` : ""}
-    <button class="btn btn-mini" data-corrigir="${esc(m.id)}" title="Corrigir setor, documento ou observação">Corrigir</button>`;
+    <button class="btn btn-mini" data-corrigir="${esc(m.id)}" title="Corrigir setor, documento ou observação">Corrigir</button>${
+    m.tipo === "SAIDA" && !m.estornadoPor ? `<button class="btn btn-mini btn-icone" data-reimprimir="${esc(m.id)}" title="Reimprimir ficha de EPI / comprovante" aria-label="Reimprimir ficha">${ICONE_IMPRESSORA}</button>` : ""}`;
 }
+const ICONE_IMPRESSORA = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>`;
 function linhaMov(m, completo) {
   const sinal = ehEntrada(m.tipo) ? "+" : "−";
   return `<tr class="${m.estornadoPor ? "estornado" : ""}"><td class="mono">${fmtData(m.data)}</td><td>${etiquetasMov(m)}</td>
@@ -476,6 +478,7 @@ function abrirProduto(id = null) {
   $("#p-categoria").value = p?.categoria || "";
   $("#p-local").value = p?.localizacao || "";
   $("#p-minimo").value = p?.estoqueMinimo ? N.fmtQtd(p.estoqueMinimo) : "";
+  $("#p-ca").value = p?.ca || "";
   $("#p-qtd").value = ""; $("#p-vu").value = ""; $("#p-vt").textContent = N.fmtCent(0);
   $("#p-saldo-inicial").hidden = !!p;
   $("#p-ativo-wrap").hidden = !p; $("#p-ativo").checked = p ? p.ativo !== false : true;
@@ -502,6 +505,7 @@ $("#form-produto").addEventListener("submit", async ev => {
     categoria: $("#p-categoria").value.trim(),
     localizacao: $("#p-local").value.trim(),
     estoqueMinimo: $("#p-minimo").value.trim() ? N.arredQtd(N.lerNumeroBR($("#p-minimo").value)) : 0,
+    ca: $("#p-ca").value.trim(),
   };
   if (!$("#p-codigo").value.trim()) return falha("#p-codigo", "Informe o código do produto.");
   if (!dados.descricao) return falha("#p-descricao", "Informe a descrição.");
@@ -556,6 +560,7 @@ function montarMov(tipo, produtoId, prod, r, novo, extra, loteId = null) {
     quantidade: r.quantidade, valorUnitario: Math.round(r.valorUnit * 10000) / 10000, valorTotalCent: r.valorMovCent,
     saldoQtd: novo.quantidade, saldoValorCent: novo.valorTotalCent, custoMedioApos: N.custoMedio(novo),
     setor: extra.setor || "", documento: extra.documento || "", observacao: extra.observacao || "",
+    ca: caDe(prod), ...(extra.ficha ? { ficha: extra.ficha } : {}),
     loteId, usuarioEmail: S.email, usuarioNome: S.perfil?.nome || "", data: serverTimestamp(),
   };
 }
@@ -620,6 +625,8 @@ function abrirLancamento(tipo, prodId = null) {
   $("#dl-confirmar").textContent = saida ? "Confirmar retirada" : "Confirmar entrada";
   $("#dl-confirmar").className = "btn " + (saida ? "btn-saida" : "btn-prim");
   for (const id of ["#dl-setor", "#dl-doc", "#dl-obs"]) $(id).value = "";
+  $("#dl-ficha").hidden = !saida;
+  preencherFicha("dl", {});
   $("#dl-msg").textContent = "";
   addItemLanc(prodId);
   $("#dlg-lanc").showModal();
@@ -728,6 +735,7 @@ $("#form-lanc").addEventListener("submit", async ev => {
   const msg = $("#dl-msg"); msg.textContent = "";
   const saida = S.lanc.tipo === "SAIDA";
   const extra = { setor: $("#dl-setor").value.trim(), documento: $("#dl-doc").value.trim(), observacao: $("#dl-obs").value.trim() };
+  if (saida) { const f = lerFicha("dl"); if (Object.values(f).some(Boolean)) extra.ficha = f; }
   if (saida && !extra.setor) { $("#dl-setor").focus(); return msg.textContent = "Informe o setor/requisitante da retirada."; }
   const res = calcularLanc().filter(x => !x.vazio);
   const ruim = res.find(x => x.erro);
@@ -763,22 +771,174 @@ $("#form-lanc").addEventListener("submit", async ev => {
     $("#dlg-lanc").close(); S.lanc = null;
     const tot = resumo.reduce((s, x) => s + x.r.valorMovCent, 0);
     toast(`${saida ? "Retirada" : "Entrada"} registrada: ${resumo.length} item(ns), ${N.fmtCent(tot)}. Estoque recalculado.`);
-    if (saida && await confirmar("Retirada registrada", `<p>Deseja imprimir o comprovante de retirada para assinatura do requisitante?</p>`, "Imprimir comprovante"))
-      imprimirComprovante(resumo, extra, loteId);
+    if (saida && await confirmar("Retirada registrada", `<p>Deseja imprimir a <b>Ficha de Substituição/Reposição de EPI</b> para assinatura?</p>
+        <p class="muted pequeno">Ela também pode ser reimpressa depois pelo botão de impressora da movimentação.</p>`, "Imprimir ficha"))
+      imprimirFichaEPI({
+        itens: resumo.map(({ p, r }) => ({ codigo: p.codigo, descricao: p.descricao, unidade: p.unidade, ca: caDe(p), quantidade: r.quantidade, valorCent: r.valorMovCent })),
+        ficha: extra.ficha || {}, setor: extra.setor, documento: extra.documento, data: new Date(), loteId, fornecidoPor: S.perfil?.nome || S.email,
+      });
   } catch (e) { msg.textContent = msgErro(e); }
   finally { btn.disabled = false; }
 });
 $("#dlg-lanc").addEventListener("close", () => { S.lanc = null; });
 
-function imprimirComprovante(itens, extra, loteId) {
-  const tot = itens.reduce((s, x) => s + x.r.valorMovCent, 0);
-  imprimir("Comprovante de retirada de material", `<p class="meta">Controle: <span class="cod">${esc(loteId)}</span><br>
-    Setor / requisitante: <b>${esc(extra.setor)}</b><br>Documento: ${esc(extra.documento || "—")}${extra.observacao ? `<br>Observação: ${esc(extra.observacao)}` : ""}</p>
-    <table><thead><tr><th>Código</th><th>Descrição</th><th>Un.</th><th class="num">Quantidade</th><th class="num">Valor unit.</th><th class="num">Valor</th></tr></thead><tbody>
-    ${itens.map(({ p, r }) => `<tr><td class="cod">${esc(p.codigo)}</td><td>${esc(p.descricao)}</td><td>${esc(p.unidade)}</td><td class="num">${N.fmtQtd(r.quantidade)}</td>
-    <td class="num">${N.fmtUnit(r.valorUnit)}</td><td class="num">${N.fmtCent(r.valorMovCent)}</td></tr>`).join("")}</tbody>
-    <tfoot><tr><td colspan="5">Total</td><td class="num">${N.fmtCent(tot)}</td></tr></tfoot></table>
-    <div class="assin"><div>Entregue por: ${esc(S.perfil?.nome || S.email)}</div><div>Recebido por (nome e matrícula)</div></div>`, { paisagem: false });
+/* ---------------------------------------------------------------- FICHA DE SUBSTITUIÇÃO / REPOSIÇÃO DE EPI */
+const MOTIVOS_EPI = [
+  ["extravio", "Extravio"], ["danificacao", "Danificação"], ["roubo", "Roubo/Furto com Boletim de Ocorrência"],
+  ["desgaste", "Troca por desgaste natural"], ["outros", "Outros"],
+];
+const CAMPOS_FICHA = ["nome", "matricula", "cargo", "unidade", "setor", "motivo", "motivoOutros", "ocorrido", "ocorridoBO"];
+
+/** Nº do C.A.: campo próprio do produto ou, na falta, extraído da descrição ("CA 12345"). */
+function caDe(p) {
+  if (p?.ca) return String(p.ca);
+  const m = String(p?.descricao || "").match(/\bC\.?\s?A\.?\s*(?:n[º°o.]*\s*)?[:\-]?\s*(\d{3,7})\b/i);
+  return m ? m[1] : "";
+}
+
+/** Monta os campos da ficha dentro de [data-ficha="prefixo"]. */
+function montarCamposFicha(px) {
+  const alvo = $(`[data-ficha="${px}"]`); if (!alvo) return;
+  alvo.innerHTML = `<div class="grade-ficha">
+      <label>Nome do servidor/brigadista<input id="${px}-f-nome" maxlength="120" autocomplete="off"></label>
+      <label>Matrícula<input id="${px}-f-matricula" maxlength="30" autocomplete="off"></label>
+      <label>Cargo<input id="${px}-f-cargo" maxlength="80" autocomplete="off"></label>
+      <label>Unidade<input id="${px}-f-unidade" maxlength="80" autocomplete="off"></label>
+      <label>Setor<input id="${px}-f-setor" maxlength="80" autocomplete="off" placeholder="Ex.: DPCIF"></label>
+      <span></span>
+    </div>
+    <label style="margin-top:10px">Motivo da substituição/reposição</label>
+    <div class="motivos">${MOTIVOS_EPI.map(([v, r]) => `<label><input type="radio" name="${px}-f-motivo" value="${v}"> ${r}</label>`).join("")}
+      <label><input type="radio" name="${px}-f-motivo" value=""> Não informar</label></div>
+    <label style="margin-top:8px">Outros (especificar)<input id="${px}-f-motivoOutros" maxlength="200"></label>
+    <label style="margin-top:8px">Descreva o ocorrido<textarea id="${px}-f-ocorrido" rows="2" maxlength="600"></textarea></label>
+    <label style="margin-top:8px">Descrição do ocorrido no Boletim de Ocorrência<textarea id="${px}-f-ocorridoBO" rows="2" maxlength="600"></textarea></label>`;
+  $(`#${px}-f-motivoOutros`).addEventListener("input", e => { if (e.target.value.trim()) $(`[name="${px}-f-motivo"][value="outros"]`).checked = true; });
+}
+function lerFicha(px) {
+  const f = {};
+  for (const k of CAMPOS_FICHA) f[k] = k === "motivo" ? ($(`[name="${px}-f-motivo"]:checked`)?.value || "") : ($(`#${px}-f-${k}`)?.value.trim() || "");
+  return f;
+}
+function preencherFicha(px, f = {}) {
+  for (const k of CAMPOS_FICHA) {
+    if (k === "motivo") $$(`[name="${px}-f-motivo"]`).forEach(r => r.checked = r.value === (f.motivo || ""));
+    else if ($(`#${px}-f-${k}`)) $(`#${px}-f-${k}`).value = f[k] || "";
+  }
+}
+
+/**
+ * Imprime a Ficha de Substituição/Reposição de EPI (modelo DIGEP).
+ * lote = { itens:[{codigo,descricao,unidade,ca,quantidade,valorCent,estornado}], ficha, setor, documento, data, loteId, fornecidoPor }
+ */
+function imprimirFichaEPI(lote) {
+  const f = lote.ficha || {}, d = tsDate(lote.data) || new Date();
+  const w = window.open("", "_blank");
+  if (!w) { toast("Permita pop-ups para imprimir.", true); return; }
+  const v = t => esc(t || "");
+  const marca = k => f.motivo === k ? "X" : "&nbsp;&nbsp;";
+  const itens = lote.itens;
+  const linhasVazias = Math.max(0, 7 - itens.length);
+  const total = itens.reduce((s, i) => s + (i.valorCent || 0), 0);
+  const blocoTexto = t => t ? `<div class="txt">${v(t)}</div>` : `<div class="linha-vazia"></div><div class="linha-vazia"></div>`;
+  w.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Ficha de Substituição/Reposição de EPI</title>
+  <style>
+    @page{size:A4 portrait;margin:15mm 15mm 14mm}
+    *{box-sizing:border-box}
+    body{margin:0;color:#000;font:12pt "Times New Roman",Times,serif}
+    h1{font:700 12pt "Times New Roman",Times,serif;text-align:center;margin:6px 0 12px}
+    table{width:100%;border-collapse:collapse;table-layout:fixed}
+    td,th{border:1px solid #000;padding:3px 5px;vertical-align:middle;height:22px}
+    .rot{font:700 9pt Arial,Helvetica,sans-serif}
+    .val{font:10pt Arial,Helvetica,sans-serif}
+    .faixa{text-align:center;font-weight:700;font-size:12pt}
+    th{font-weight:700;font-size:11pt;text-align:center}
+    td.c{text-align:center} td.r{text-align:right;white-space:nowrap}
+    .itm{font:10pt Arial,Helvetica,sans-serif}
+    .est{color:#555;font-size:8pt}
+    .sec{margin:22px 22px 0}
+    .sec b{display:block}
+    .mot div{line-height:1.35}
+    .txt{white-space:pre-wrap;margin:2px 0 8px;font-size:11pt}
+    .linha-vazia{border-bottom:1px solid #999;height:20px}
+    .termo{text-align:center;margin:26px 22px 0;line-height:1.3}
+    .termo b{display:block;margin-bottom:12px}
+    hr{border:0;border-top:1.5px solid #aaa;margin:6px 0 0}
+    .assin{margin:18px 22px 0}
+    .assin .esp{height:30px}
+    .assin small{font:9pt Arial,Helvetica,sans-serif;color:#333}
+    .rodape{margin-top:22px;font:7.5pt Arial,Helvetica,sans-serif;color:#555;border-top:.5px solid #bbb;padding-top:4px}
+  </style></head><body>
+  <h1>FICHA DE SUBSTITUIÇÃO / REPOSIÇÃO DE EPI</h1>
+  <table>
+    <colgroup><col style="width:25%"><col style="width:25%"><col style="width:25%"><col style="width:25%"></colgroup>
+    <tr><td colspan="4"><span class="rot">NOME</span> <span class="val">${v(f.nome)}</span></td></tr>
+    <tr><td colspan="2"><span class="rot">MATRÍCULA:</span> <span class="val">${v(f.matricula)}</span></td>
+        <td colspan="2"><span class="rot">CARGO:</span> <span class="val">${v(f.cargo)}</span></td></tr>
+    <tr><td colspan="2"><span class="rot">UNIDADE:</span> <span class="val">${v(f.unidade)}</span></td>
+        <td colspan="2"><span class="rot">SETOR:</span> <span class="val">${v(f.setor)}</span></td></tr>
+    <tr><td colspan="4" class="faixa">EPI SOLICITADO PARA SUBSTITUIÇÃO/REPOSIÇÃO:</td></tr>
+    <tr><th>Equipamento</th><th>Quantidade</th><th>Nº do C.A.</th><th>Valor estimado (R$)</th></tr>
+    ${itens.map(i => `<tr class="itm"><td>${v(i.descricao)}${i.estornado ? ` <span class="est">(estornado)</span>` : ""}</td>
+      <td class="c">${N.fmtQtd(i.quantidade)} ${v(i.unidade)}</td><td class="c">${v(i.ca)}</td>
+      <td class="r">${N.fmtCent(i.valorCent).replace("R$", "").trim()}</td></tr>`).join("")}
+    ${"<tr><td></td><td></td><td></td><td></td></tr>".repeat(linhasVazias)}
+    <tr><td colspan="4" class="val">${lote.documento ? `<span class="rot">DOCUMENTO / PROCESSO SEI:</span> ${v(lote.documento)}` : ""}</td></tr>
+    <tr><td colspan="4" class="val" style="text-align:right"><span class="rot">VALOR TOTAL ESTIMADO:</span> ${N.fmtCent(total)}</td></tr>
+  </table>
+
+  <div class="sec mot"><b>MOTIVO DA SUBSTITUIÇÃO/REPOSIÇÃO:</b>
+    <div>(${marca("extravio")}) Extravio</div>
+    <div>(${marca("danificacao")}) Danificação</div>
+    <div>(${marca("roubo")}) Roubo/Furto com Boletim de Ocorrência</div>
+    <div>(${marca("desgaste")}) Troca por desgaste natural</div>
+    <div>(${marca("outros")}) Outros: ${f.motivoOutros ? v(f.motivoOutros) : "______________________________________________"}</div>
+  </div>
+  <div class="sec">Descreva o ocorrido:${blocoTexto(f.ocorrido)}</div>
+  <div class="sec" style="margin-top:6px">Descrição do Ocorrido no Boletim de Ocorrência.${blocoTexto(f.ocorridoBO)}</div>
+
+  <div class="termo"><b>TERMO DE RESPONSABILIDADE</b>
+    Declaro que as informações acima prestadas são verdadeiras e estou ciente de que o extravio, perda ou danificação de equipamento por culpa ou dolo poderá resultar em responsabilização e necessidade de ressarcimento ao erário, conforme Contrato
+  </div>
+  <hr>
+  <div class="assin"><b>Brasília/DF, &nbsp; ${String(d.getDate()).padStart(2, "0")} / ${String(d.getMonth() + 1).padStart(2, "0")} / ${d.getFullYear()}</b></div>
+  <hr>
+  <div class="assin"><b>ASSINATURA DO BRIGADISTA/ CHEFE DE ESQUADRÃO</b><div class="esp"></div></div>
+  <hr>
+  <div class="assin"><b>ASSINATURA DO SERVIDOR QUE FORNECEU</b><div class="esp"></div></div>
+  <hr>
+  <div class="assin" style="margin-top:2px"><small>${v(lote.fornecidoPor)}</small></div>
+
+  <div class="rodape">Controle nº ${v(lote.loteId)} · Retirada registrada em ${d.toLocaleString("pt-BR")}${lote.setor ? ` · Setor/requisitante: ${v(lote.setor)}` : ""}
+    · Emitido em ${new Date().toLocaleString("pt-BR")} por ${v(S.perfil?.nome || S.email)} — ${v(INSTITUICAO.sistema)} ${v(INSTITUICAO.sigla)}</div>
+  <script>window.onload=()=>{setTimeout(()=>window.print(),300)}<\/script></body></html>`);
+  w.document.close();
+}
+
+/** Reimpressão: reúne todos os itens da mesma retirada (mesmo lote). */
+async function reimprimirRetirada(movId) {
+  const m = acharMov(movId);
+  if (!m) return toast("Movimentação não encontrada. Recarregue a página.", true);
+  try {
+    let movs = [m];
+    if (m.loteId) {
+      const snap = await getDocs(query(colMov, where("loteId", "==", m.loteId)));
+      movs = snap.docs.map(d => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) })).filter(x => x.tipo === "SAIDA");
+      if (!movs.length) movs = [m];
+    }
+    movs.sort((a, b) => (tsDate(a.data)?.getTime() || 0) - (tsDate(b.data)?.getTime() || 0));
+    const validos = movs.filter(x => !x.estornadoPor);
+    if (!validos.length) return toast("Todos os itens desta retirada foram estornados.", true);
+    // dados da ficha: a correção mais recente prevalece
+    const comFicha = movs.filter(x => x.ficha).sort((a, b) => (tsDate(b.corrigidoEm)?.getTime() || 0) - (tsDate(a.corrigidoEm)?.getTime() || 0));
+    const ficha = comFicha[0]?.ficha || {};
+    imprimirFichaEPI({
+      itens: validos.map(x => ({ codigo: x.codigo, descricao: x.descricao, unidade: x.unidade, ca: x.ca || caDe(S.porId.get(x.produtoId) || x), quantidade: x.quantidade, valorCent: x.valorTotalCent })),
+      ficha: comFicha.length ? ficha : { setor: "" }, setor: validos[0].setor, documento: validos[0].documento,
+      data: validos[0].data, loteId: m.loteId || m.id, fornecidoPor: validos[0].usuarioNome || validos[0].usuarioEmail,
+    });
+    if (validos.length < movs.length) toast(`${movs.length - validos.length} item(ns) estornado(s) desta retirada não foram impressos.`);
+  } catch (e) { toast(msgErro(e), true); }
 }
 
 /* ---------------------------------------------------------------- FICHA DO PRODUTO (Kardex) */
@@ -883,6 +1043,7 @@ let movEstorno = null;
 document.addEventListener("click", e => {
   const b1 = e.target.closest("[data-estornar]"); if (b1) abrirEstorno(b1.dataset.estornar);
   const b2 = e.target.closest("[data-corrigir]"); if (b2) abrirCorrecao(b2.dataset.corrigir);
+  const b3 = e.target.closest("[data-reimprimir]"); if (b3) reimprimirRetirada(b3.dataset.reimprimir);
 });
 
 function abrirEstorno(id) {
@@ -953,6 +1114,8 @@ function abrirCorrecao(id) {
   $("#dc2-setor-rot").firstChild.textContent = fornecedor ? "Fornecedor / origem" : "Setor / requisitante";
   $("#dc2-setor").setAttribute("list", fornecedor ? "lista-fornecedores" : "lista-setores");
   $("#dc2-setor").value = m.setor || ""; $("#dc2-doc").value = m.documento || ""; $("#dc2-obs").value = m.observacao || "";
+  $("#dc2-ficha").hidden = m.tipo !== "SAIDA";
+  preencherFicha("dc2", m.ficha || {});
   const hist = m.historico || [];
   $("#dc2-hist").innerHTML = hist.length ? `<div class="hist"><b>Correções anteriores</b>${hist.map(h => `<div>${new Date(h.em).toLocaleString("pt-BR")} — ${esc(h.nome || h.por)}: ${
     Object.entries(h.alteracoes || {}).map(([k, v]) => `${esc(k)} "${esc(v.de || "—")}" → "${esc(v.para || "—")}"`).join("; ")}</div>`).join("")}</div>` : "";
@@ -973,9 +1136,15 @@ $("#form-corrigir").addEventListener("submit", async ev => {
       const s = await tx.get(ref); if (!s.exists()) throw new Error("Movimentação não encontrada.");
       const o = s.data(), alteracoes = {};
       for (const k of ["setor", "documento", "observacao"]) if ((o[k] || "") !== novos[k]) alteracoes[k] = { de: o[k] || "", para: novos[k] };
+      let fichaNova = null;
+      if (o.tipo === "SAIDA") {
+        const fa = o.ficha || {}, fn = lerFicha("dc2");
+        for (const k of CAMPOS_FICHA) if ((fa[k] || "") !== (fn[k] || "")) alteracoes["ficha." + k] = { de: fa[k] || "", para: fn[k] || "" };
+        if (Object.keys(alteracoes).some(k => k.startsWith("ficha."))) fichaNova = fn;
+      }
       if (!Object.keys(alteracoes).length) throw new Error("Nenhum dado foi alterado.");
       tx.update(ref, {
-        ...novos, corrigidoEm: serverTimestamp(), corrigidoPor: S.email,
+        ...novos, ...(fichaNova ? { ficha: fichaNova } : {}), corrigidoEm: serverTimestamp(), corrigidoPor: S.email,
         historico: [...(o.historico || []), { em: new Date().toISOString(), por: S.email, nome: S.perfil?.nome || "", alteracoes }],
       });
     });
@@ -1143,6 +1312,7 @@ $("#form-usuario").onsubmit = async ev => {
 /* ---------------------------------------------------------------- Início */
 preencherInstitucional();
 $$("[data-fechar]").forEach(b => b.onclick = () => b.closest("dialog").close());
+montarCamposFicha("dl"); montarCamposFicha("dc2");
 // Enter nos itens do lançamento avança o campo (não confirma por engano)
 $("#form-lanc").addEventListener("keydown", e => {
   if (e.key !== "Enter" || e.target.tagName !== "INPUT") return;

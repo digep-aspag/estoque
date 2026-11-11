@@ -13,6 +13,7 @@ Sistema web de controle de estoque/almoxarifado com valoração pelo **custo mé
 | **Entrada / Retirada** | Lançamento de até 8 itens por vez (uma requisição ou uma nota fiscal), com **prévia do recálculo** antes de confirmar e bloqueio de saldo insuficiente. Gera comprovante de retirada para assinatura. |
 | **Movimentações** | Trilha de auditoria: nada é apagado e quantidade/valor nunca são editados. Filtro por período, tipo e texto; exportação CSV e impressão. |
 | **Estorno** | Anula um lançamento errado por lançamento inverso, pelo mesmo valor, com justificativa obrigatória (Operador e Administrador). O original fica marcado como "Estornado". |
+| **Ficha de EPI** | A retirada imprime a *Ficha de Substituição/Reposição de EPI* (modelo DIGEP), com nome, matrícula, cargo, motivo, itens, Nº do C.A. e valor estimado. O botão de impressora reimprime a ficha de qualquer retirada (todos os itens do mesmo lançamento). |
 | **Corrigir dados** | Corrige setor/requisitante, documento e observação de uma movimentação, guardando o histórico (valor anterior, quem e quando). |
 | **Ficha do produto** | Kardex: cada entrada/saída com saldo físico, saldo financeiro e custo médio após o lançamento. |
 | **Inventário** | Contagem física (inclusive às cegas), cálculo de sobras/faltas, folha de contagem impressa e lançamento automático dos ajustes. Detecta itens movimentados durante a contagem e pede recontagem. |

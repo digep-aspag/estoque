@@ -101,9 +101,9 @@ service cloud.firestore {
         && request.resource.data.estornadoEm == request.time
         && getAfter(caminhoMov(request.resource.data.estornadoPor)).data.estornoDe == movId;
     }
-    // Correção de dados complementares (setor, documento, observação), com histórico.
+    // Correção de dados complementares (setor, documento, observação, dados da ficha de EPI), com histórico.
     function correcaoDados() {
-      return camposAlterados().hasOnly(['setor', 'documento', 'observacao', 'historico', 'corrigidoEm', 'corrigidoPor'])
+      return camposAlterados().hasOnly(['setor', 'documento', 'observacao', 'ficha', 'historico', 'corrigidoEm', 'corrigidoPor'])
         && request.resource.data.corrigidoPor == meuEmail()
         && request.resource.data.corrigidoEm == request.time
         && request.resource.data.historico is list
